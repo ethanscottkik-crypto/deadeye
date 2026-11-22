@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deadeye</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Deadeye (v49): an operations console. Black room, cyan instruments, red only for what needs the owner.
+     Layout: left rail = identity, system state, figures; centre = the pipeline and the positions; right rail = target scope and logs.
+     One loud thing: the target scope. Everything else is thin lines and small type. */
+  --bg:#03060a; --panel:#070e14; --panel2:#0a141c; --line:#143039; --line2:#1f4a57; --ink:#e2f4f3; --muted:#6c8c95;
+  --flow:#4fd6e6; --good:#63f0b6; --warn:#f3d27a; --bad:#ff4d3a; --stop:#8aa0a8; --accent:#4fd6e6; --hatch:#0f2a33;
+  --display:"Michroma","Eurostile","Arial Narrow",sans-serif; --label:"Barlow Condensed","Arial Narrow",sans-serif;
+  --body:"Barlow",system-ui,sans-serif; --mono:"Share Tech Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--body);min-height:100vh;
+  background-image:radial-gradient(ellipse at 50% -10%,rgba(79,214,230,.07),transparent 60%),
+    linear-gradient(rgba(79,214,230,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(79,214,230,.035) 1px,transparent 1px);
+  background-size:auto,48px 48px,48px 48px;background-attachment:fixed}
+body.alert{--hatch:rgba(255,77,58,.5)}
+a{color:var(--flow);text-decoration-thickness:1px;text-underline-offset:2px}
+a:focus-visible,summary:focus-visible{outline:1px solid var(--flow);outline-offset:3px}
+.good{--c:var(--good)} .warn{--c:var(--warn)} .bad{--c:var(--bad)} .stop{--c:var(--stop)} .flow{--c:var(--flow)}
+
+.console{max-width:1800px;margin:0 auto;padding:18px 18px 40px;display:grid;grid-template-columns:300px minmax(0,1fr) 350px;gap:18px;align-items:start}
+.rail{display:grid;gap:16px;min-width:0}
+main{display:grid;gap:18px;min-width:0}
+
+/* panels: a thin box, corner ticks, a filled tab for its name */
+.panel{position:relative;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);padding:14px 14px 14px;min-width:0}
+.panel::before,.panel::after{content:"";position:absolute;width:9px;height:9px;border:1px solid var(--flow);pointer-events:none}
+.panel::before{left:-1px;top:-1px;border-right:0;border-bottom:0}
+.panel::after{right:-1px;bottom:-1px;border-left:0;border-top:0}
+h2{display:flex;align-items:center;gap:10px;margin:0 0 12px;font:600 13px/1 var(--label);letter-spacing:.16em;text-transform:uppercase;color:var(--flow)}
+h2 b{font-weight:600;background:var(--flow);color:var(--bg);padding:4px 8px 3px}
+h2::after{content:"";flex:1;height:5px;border-top:1px solid var(--line2);background:repeating-linear-gradient(90deg,var(--line2) 0 1px,transparent 1px 12px)}
+
+/* identity */
+.ident{display:grid;grid-template-columns:64px 1fr;gap:4px 14px;align-items:center}
+.ident svg{grid-row:1/3;width:64px;height:64px}
+h1{font:400 25px/1 var(--display);letter-spacing:.14em;margin:0;text-transform:uppercase}
+#dstate{font:400 13px/1 var(--display);letter-spacing:.2em;color:var(--c,var(--good))}
+#dstate::before{content:"";display:inline-block;width:7px;height:7px;background:currentColor;margin-right:8px;vertical-align:1px}
+.clock{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+#dclock{font:400 30px/1 var(--mono);letter-spacing:.06em;font-variant-numeric:tabular-nums}
+.clock small,.readout small{display:block;font:500 10.5px/1.2 var(--label);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+#dsweep{font:400 15px/1 var(--mono);color:var(--flow);text-align:right;margin-top:3px}
+.snap{grid-column:1/-1;font:400 11px/1.5 var(--mono);color:var(--muted);margin-top:8px}
+.snap b{color:var(--ink);font-weight:400}
+
+/* system state: one line each, a square lamp */
+.pills{display:grid;gap:0}
+.pill{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font:500 13px/1.25 var(--label);text-transform:uppercase;letter-spacing:.1em;color:var(--c,var(--muted))}
+.pill:first-child{border-top:0;padding-top:0}
+.pill::before{content:"";flex:none;width:8px;height:8px;background:currentColor;box-shadow:0 0 8px currentColor}
+.pill.bad::before{animation:blink 1s steps(2) infinite}
+.pillnote{font:400 11px/1.4 var(--mono);color:var(--muted);padding:0 0 7px 18px;margin-top:-3px}
+.readouts.four{grid-template-columns:repeat(4,1fr)}
+.rules{display:grid;grid-template-columns:auto 1fr;gap:0 14px;margin:0}
+.rules>*{padding:6px 0;border-top:1px solid var(--line);font:400 12.5px/1.3 var(--mono)}
+.rules>:nth-child(-n+2){border-top:0}
+.rules dt{white-space:nowrap;color:var(--muted);font:500 12.5px/1.3 var(--label);letter-spacing:.1em;text-transform:uppercase}
+.rules dd{margin:0;text-align:right;color:var(--ink)}
+
+/* figures */
+.tiles{display:grid;gap:16px}
+.tile{position:relative;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-left:2px solid var(--c,var(--line2));padding:11px 14px 12px;display:grid;gap:3px}
+.tile .k{font:500 11.5px/1.2 var(--label);color:var(--muted);text-transform:uppercase;letter-spacing:.16em}
+.tile .v{font:400 25px/1.2 var(--display);text-transform:uppercase;letter-spacing:.03em;font-variant-numeric:tabular-nums;color:var(--c,var(--ink));overflow-wrap:anywhere}
+.tile .n{font:400 11px/1.5 var(--mono);color:var(--muted)}
+.meter{height:6px;background:repeating-linear-gradient(90deg,var(--line) 0 3px,transparent 3px 5px);margin-top:8px;overflow:hidden}
+.meter i{display:block;height:100%;background:repeating-linear-gradient(90deg,var(--flow) 0 3px,transparent 3px 5px)}
+#spark{width:100%;height:44px;margin-top:6px;display:block}
+
+/* the pipeline, inside a hatched frame that turns red when something needs the owner */
+.frame{min-width:0;padding:9px;background:repeating-linear-gradient(135deg,var(--hatch) 0 2px,transparent 2px 7px);border:1px solid var(--line)}
+.frame>.panel{border-color:var(--line2)}
+.stage{overflow:hidden}
+.scanwrap{position:relative}
+.scanbox{position:absolute;inset:0;overflow:hidden;pointer-events:none}   /* the scan line is clipped here, so it can never widen the pipeline and call up a scrollbar */
+.scroll{overflow-x:auto}
+#floor{display:block;width:100%;min-width:760px;height:auto}
+.scan{position:absolute;top:0;bottom:0;left:-60px;width:60px;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(79,214,230,.07));border-right:1px solid rgba(79,214,230,.35);opacity:0}
+.now{display:flex;gap:10px;align-items:baseline;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);min-height:30px;font:400 13px/1.5 var(--mono)}
+.now .tag{color:var(--bg);background:var(--flow);padding:1px 7px;font:600 12px/1.4 var(--label);letter-spacing:.14em;flex:none}
+.now .txt{color:var(--ink)}
+.now .txt::after{content:"_";color:var(--flow);animation:blink 1s steps(2) infinite}
+.fine{color:var(--muted);font:400 11px/1.5 var(--mono);margin:4px 0 0}
+
+.link{stroke:var(--line2);stroke-width:1.2;fill:none}
+.link.live{stroke:var(--flow);stroke-opacity:.8;stroke-dasharray:3 9}
+.link.watch{stroke-dasharray:2 6;stroke-width:1}
+.box{fill:var(--panel);stroke:var(--line2);stroke-width:1.2;rx:0}
+.st.busy .box{stroke:var(--flow);fill:rgba(79,214,230,.08)}
+.st.down .box{stroke:var(--bad)}
+.st .nm{font:400 12.5px var(--display);fill:var(--ink);letter-spacing:.1em;text-anchor:middle}
+.st .sub{font:500 8px var(--label);fill:var(--muted);text-anchor:middle;letter-spacing:.16em;text-transform:uppercase}
+.st .stat{font:400 9.5px var(--mono);fill:var(--c,var(--flow));text-anchor:middle}
+.st.small .nm{font-size:10.5px}
+.zone{fill:rgba(79,214,230,.02);stroke:var(--line2);stroke-width:1;stroke-dasharray:2 5;rx:0}
+.zl{font:500 9.5px var(--label);fill:var(--muted);letter-spacing:.2em}
+.beat{fill:none;stroke:var(--good);stroke-width:1;opacity:0;transform-box:fill-box;transform-origin:center;rx:0}
+.spin{fill:none;stroke:var(--flow);stroke-width:1.5;stroke-dasharray:6 8;opacity:0;transform-box:fill-box;transform-origin:center}
+.st.busy .spin{opacity:1}
+.chip rect{fill:var(--bg);stroke:var(--c,var(--flow));stroke-width:1;rx:0}
+.chip text{font:400 9.5px var(--mono);fill:var(--c,var(--flow));text-anchor:middle}
+.chip.KILL{--c:var(--bad)} .chip.CONDITIONAL{--c:var(--warn)} .chip.STOP{--c:var(--stop)} .chip.CLEAR{--c:var(--good)} .chip.none{--c:var(--muted)} .chip.refused{--c:var(--bad)}
+
+/* target scope */
+#scope{display:block;width:100%;max-width:330px;margin:0 auto}
+#scope .ring{fill:none;stroke:var(--line2);stroke-width:1}
+#scope .ring.usual{stroke:var(--muted);stroke-dasharray:2 4}
+#scope .hair{stroke:var(--line2);stroke-width:1}
+#scope .tick{stroke:var(--flow);stroke-width:1}
+#scope .lab{font:500 8.5px var(--label);fill:var(--muted);letter-spacing:.16em}
+#scope .core{fill:none;stroke:var(--bad);stroke-width:1.2}
+#sweep{transform-origin:150px 150px}
+.blip circle{fill:var(--c,var(--flow))}
+.blip .halo{fill:none;stroke:var(--c,var(--flow));stroke-width:1;opacity:.6;transform-box:fill-box;transform-origin:center}
+.blip text{font:400 9.5px var(--mono);fill:var(--c,var(--flow))}
+.blip.learn{--c:var(--muted)} .blip.near{--c:var(--warn)} .blip.hit{--c:var(--bad)}
+.readouts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.readout b{display:block;font:400 17px/1.3 var(--mono);color:var(--ink)}
+.scopenote{font:400 11px/1.5 var(--mono);color:var(--muted);margin:10px 0 0}
+
+/* lists */
+.rows{display:grid}
+.row{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;padding:8px 0;border-top:1px solid var(--line);align-items:baseline}
+.row:first-child{border-top:0}
+.row .l{font:400 12.5px var(--mono);white-space:nowrap;color:var(--ink)}
+.row .r{min-width:0;overflow-wrap:anywhere;font-size:13.5px}
+.row .m,.m{font:400 11px var(--mono);color:var(--muted)}
+.tagv:empty{display:none}
+.tagv{font:500 11.5px/1 var(--label);padding:2px 6px 1px;border:1px solid currentColor;color:var(--c,var(--muted));letter-spacing:.12em;text-transform:uppercase}
+.empty{color:var(--muted);margin:0;font:400 12px/1.5 var(--mono)}
+details{margin-top:4px} summary{cursor:pointer;color:var(--flow);font:500 12px var(--label);letter-spacing:.12em;text-transform:uppercase}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font:400 11px/1.6 var(--mono);color:var(--muted);margin:6px 0 0}
+ul.why{margin:6px 0 0;padding-left:16px;font:400 11px/1.6 var(--mono);color:var(--muted)}
+.rail .rows{max-height:340px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+.foot{color:var(--muted);font:400 11px/1.6 var(--mono);max-width:90ch;margin:0}
+
+/* positions: one strip each, the lane runs from the stop line to the take line */
+.coins .sum{display:flex;flex-wrap:wrap;gap:4px 22px;font:400 12px var(--mono);color:var(--muted);margin:-2px 0 8px}
+.coins .sum b{font-weight:400;color:var(--c,var(--ink))}
+.armhead{font:600 13px var(--label);color:var(--flow);letter-spacing:.16em;text-transform:uppercase;margin:14px 0 2px;padding-top:10px;border-top:1px solid var(--line2)}
+.coin{display:grid;grid-template-columns:minmax(120px,170px) minmax(150px,175px) 1fr minmax(120px,170px);gap:6px 18px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.coin:first-of-type{border-top:0}
+.chartrow{grid-column:1/-1;margin-top:2px}
+.coin svg.bigchart{display:block;width:100%;height:120px;border:1px solid var(--line);
+  background:linear-gradient(rgba(79,214,230,.05) 1px,transparent 1px) 0 0/100% 24px,linear-gradient(90deg,rgba(79,214,230,.05) 1px,transparent 1px) 0 0/40px 100%}
+.coin .nm{font:400 15px/1.1 var(--display);letter-spacing:.06em;overflow-wrap:anywhere}
+.coin .nm a{font:500 11px var(--label);letter-spacing:.14em;text-transform:uppercase;margin-left:8px}
+.coin .age{font:400 11px var(--mono);color:var(--muted);margin-top:5px}
+.coin .pct{font:400 24px/1 var(--display);font-variant-numeric:tabular-nums;color:var(--c,var(--ink))}
+.coin .usd{font:400 11px var(--mono);color:var(--muted);margin-top:5px}
+.lane{position:relative;height:36px}
+.lane .track{position:absolute;left:0;right:0;top:13px;height:8px;background:repeating-linear-gradient(90deg,var(--line2) 0 1px,transparent 1px 8px);border-left:2px solid var(--bad);border-right:2px solid var(--good)}
+.lane .zero{position:absolute;top:8px;width:1px;height:18px;background:var(--ink)}
+.lane .dot{position:absolute;top:9px;width:9px;height:16px;margin-left:-4.5px;background:var(--c,var(--flow));box-shadow:0 0 10px var(--c,var(--flow))}
+.lane .lab{position:absolute;top:25px;font:400 9.5px var(--mono);color:var(--muted);transform:translateX(-50%);white-space:nowrap}
+.lane .lab.l{transform:none;left:0} .lane .lab.r{transform:none;right:0;left:auto}
+.coin .side{font:400 11px/1.6 var(--mono);color:var(--muted)}
+.coin svg{display:block;width:100%;height:26px}
+.closed .coin .pct{font-size:18px}
+
+/* motion: one power-up when the page opens, then only instruments that mean something keep moving */
+@media (prefers-reduced-motion:no-preference){
+  .boot .panel,.boot .tile,.boot .frame{animation:power .7s steps(7) both;animation-delay:calc(var(--i,0)*90ms)}
+  .link.live{animation:dash 1.6s linear infinite}
+  .beat.on{animation:beat 2.4s ease-out infinite}
+  .st.busy .spin{animation:spin 1s linear infinite}
+  #sweep{animation:spin 6s linear infinite}
+  .blip .halo{animation:ping 2s ease-out infinite}
+  .scan{animation:scan 7s linear infinite}
+}
+@keyframes power{0%{opacity:0;clip-path:inset(0 100% 0 0)}40%{opacity:.5;clip-path:inset(0 0 0 0)}55%{opacity:.15}70%{opacity:1}85%{opacity:.6}100%{opacity:1;clip-path:inset(0 0 0 0)}}
+@keyframes dash{to{stroke-dashoffset:-24}}
+@keyframes beat{0%{opacity:.7;transform:scale(1)}100%{opacity:0;transform:scale(1.5)}}
+@keyframes ping{0%{opacity:.8;transform:scale(1)}100%{opacity:0;transform:scale(2.6)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes blink{50%{opacity:.15}}
+@keyframes scan{0%{left:-60px;opacity:1}100%{left:100%;opacity:1}}
+
+@media (max-width:1320px){.console{grid-template-columns:290px minmax(0,1fr)}.rail.right{grid-column:2;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));align-items:start}.rail.left{grid-row:1/3}}
+@media (max-width:860px){
+  .console{display:flex;flex-direction:column;align-items:stretch;padding:12px 10px 32px;gap:14px}
+  .console>*,.rail>*,main>*{min-width:0;max-width:100%}
+  .rail,main{display:contents}
+  .o0{order:0}.o1{order:1}.o2{order:2}.o3{order:3}.o4{order:4}.o5{order:5}.o6{order:6}.o7{order:7}
+  .coin{grid-template-columns:1fr 1fr}.lane{grid-column:1/-1}
+  .rail .rows{max-height:none}
+  h1{font-size:22px}
+}
+</style>
+</head>
+<body class="boot">
+<div class="console">
+  <aside class="rail left">
+    <header class="panel ident o0" style="--i:0">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24" fill="none" stroke="#4fd6e6" stroke-width="1.5" stroke-dasharray="118 33" transform="rotate(-50 32 32)"/><circle cx="32" cy="32" r="15" fill="none" stroke="#1f4a57"/><path d="M32 2v12M32 50v12M2 32h12M50 32h12" stroke="#4fd6e6" stroke-width="1.5"/><path d="M32 25l6 10H26z" fill="#ff4d3a"/></svg>
+      <h1 id="wordmark">Deadeye</h1>
+      <div id="dstate">Online</div>
+      <div class="clock"><div><small>Local time</small><span id="dclock">--:--:--</span></div><div><small>Since last sweep</small><div id="dsweep">--:--</div></div></div>
+      <div class="snap" id="snap"></div>
+    </header>
+    <section class="panel o2" style="--i:1" aria-label="System state"><h2><b>System</b></h2><div class="pills" id="pills"></div></section>
+    <section class="tiles o3" id="tiles" aria-label="Wallet figures"></section>
+  </aside>
+
+  <main>
+    <div class="frame o5" style="--i:2">
+      <section class="panel stage" aria-label="What the desk did in its last run">
+        <h2><b>Acquisition pipeline</b></h2>
+        <div class="scanwrap"><div class="scroll"><svg id="floor" viewBox="0 0 1040 430" role="img" aria-labelledby="floor-title"><title id="floor-title">Tokens moving from the feed through SCOUT and RISK to the signer and the wallet</title></svg></div><div class="scanbox"><div class="scan"></div></div></div>
+        <div class="now"><span class="tag" id="nowtag">REPLAY</span><span class="txt" id="now"></span></div>
+        <p class="fine" id="fine"></p>
+      </section>
+    </div>
+    <section class="panel coins o1" style="--i:3" aria-label="How the coins the desk bought are doing">
+      <h2><b>Positions</b></h2>
+      <div class="sum" id="coinsum"></div>
+      <div id="coins"></div>
+      <div id="armed"></div>
+      <details id="closedbox"><summary id="closedsum"></summary><div class="closed" id="closed"></div></details>
+    </section>
+    <p class="foot o7" id="foot">This page is a snapshot. It is rebuilt after each agent run and cannot update by itself. The wallet balance and prices were read from Solana and Jupiter when the snapshot was taken. The pipeline replays what the last run did, in order; it is not a live feed.</p>
+  </main>
+
+  <aside class="rail right">
+    <section class="panel o4" style="--i:4" aria-label="Armed coins and how far each is from its buy level">
+      <h2><b>Target scope</b></h2>
+      <svg id="scope" viewBox="0 0 300 300" role="img" aria-labelledby="scope-title"><title id="scope-title">Armed coins by distance from their buy level</title>
+        <defs><linearGradient id="sw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4fd6e6" stop-opacity="0"/><stop offset="1" stop-color="#4fd6e6" stop-opacity=".28"/></linearGradient></defs>
+        <circle class="ring" cx="150" cy="150" r="132"/><circle class="ring usual" cx="150" cy="150" r="88"/><circle class="ring" cx="150" cy="150" r="44"/><circle class="core" cx="150" cy="150" r="9"/>
+        <path class="hair" d="M150 10v280M10 150h280"/>
+        <g id="ticks"></g>
+        <g id="sweep"><path d="M150 150L150 18A132 132 0 0 1 243.3 56.7Z" fill="url(#sw)" transform="rotate(-45 150 150)"/><line x1="150" y1="150" x2="150" y2="18" stroke="#4fd6e6" stroke-width="1" transform="rotate(0 150 150)"/></g>
+        <text class="lab" x="154" y="58">USUAL PRICE</text><text class="lab" x="164" y="146" id="trigl">BUY LEVEL</text>
+        <g id="blips"></g>
+      </svg>
+      <div class="readouts"><div class="readout"><small>Armed</small><b id="r-armed">0</b></div><div class="readout"><small>Buy level</small><b id="r-trig">n/a</b></div><div class="readout"><small>Nearest</small><b id="r-near">n/a</b></div></div>
+      <p class="scopenote" id="scopenote"></p>
+      <div class="readouts four" id="trial" hidden><div class="readout"><small>Armed so far</small><b id="t-all">0</b></div><div class="readout"><small>Bought</small><b id="t-buy">0</b></div><div class="readout"><small>Expired</small><b id="t-exp">0</b></div><div class="readout"><small>Refused</small><b id="t-ref">0</b></div></div>
+    </section>
+    <section class="panel o6" style="--i:5"><h2><b>Rules in force</b></h2><dl class="rules" id="rules"></dl><p class="scopenote" id="paper" hidden></p></section>
+    <section class="panel o6" style="--i:5"><h2><b>Risk verdicts</b></h2><div class="rows" id="verdicts"></div></section>
+    <section class="panel o6" style="--i:6"><h2><b>Orders</b></h2><div class="rows" id="orders"></div></section>
+    <section class="panel o6" style="--i:7"><h2><b>Wallet</b></h2><div class="rows" id="holdings"></div></section>
+    <section class="panel o6" style="--i:8" id="visitorsbox" hidden><h2><b>Visitors</b></h2><div class="rows" id="visitors"></div></section>
+    <section class="panel o6" style="--i:8"><h2><b>Run log</b></h2><div class="rows" id="runs"></div></section>
+  </aside>
+</div>
+
+<script type="application/json" id="data">{"public":true,"built":"2026-11-22T09:29:34Z","engagement":"micro-live","signer":{"state":"running","utc":"2026-11-22T09:29:26Z","ageSeconds":8},"halted":false,"haltReason":null,"wallet":{"address":null,"sol":null,"rentSol":null,"totalSol":null,"totalUsd":19.8739,"solUsd":69.769654,"error":null,"tokens":[]},"profit":{"gainUsd":-0.1924,"gainSol":-0.002758,"halfUsd":0.0},"today":{"startUsd":19.9237,"changeUsd":-0.0498,"changePct":-0.25,"maxTicketUsd":0.9534,"maxTotalUsd":5.7202,"atRiskUsd":0,"lossHaltPct":7.5,"feeBudgetUsd":0.3813},"history":[{"utc":"2026-11-21T06:04:57Z","usd":9.6305},{"utc":"2026-11-21T06:11:58Z","usd":9.6252},{"utc":"2026-11-21T06:29:21Z","usd":9.6954},{"utc":"2026-11-21T06:43:33Z","usd":9.8683},{"utc":"2026-11-21T07:07:40Z","usd":10.0291},{"utc":"2026-11-21T07:07:47Z","usd":10.0432},{"utc":"2026-11-21T07:22:07Z","usd":9.9927},{"utc":"2026-11-21T07:31:47Z","usd":9.9916},{"utc":"2026-11-21T08:53:58Z","usd":9.9179},{"utc":"2026-11-21T09:09:00Z","usd":9.9627},{"utc":"2026-11-21T09:33:40Z","usd":9.789},{"utc":"2026-11-21T09:47:23Z","usd":9.8054},{"utc":"2026-11-21T10:01:15Z","usd":9.7853},{"utc":"2026-11-21T10:28:13Z","usd":9.8033},{"utc":"2026-11-21T11:27:26Z","usd":9.7009},{"utc":"2026-11-21T12:26:47Z","usd":9.8005},{"utc":"2026-11-21T13:28:44Z","usd":10.0219},{"utc":"2026-11-21T13:36:35Z","usd":9.6907},{"utc":"2026-11-21T13:53:00Z","usd":19.7682},{"utc":"2026-11-21T14:36:09Z","usd":19.3525},{"utc":"2026-11-21T15:35:38Z","usd":19.4172},{"utc":"2026-11-21T16:34:56Z","usd":19.4737},{"utc":"2026-11-21T17:34:53Z","usd":19.5048},{"utc":"2026-11-21T18:35:21Z","usd":19.5817},{"utc":"2026-11-21T19:35:09Z","usd":19.3834},{"utc":"2026-11-21T20:34:31Z","usd":19.38},{"utc":"2026-11-21T21:35:31Z","usd":19.2815},{"utc":"2026-11-21T22:34:42Z","usd":19.2114},{"utc":"2026-11-21T23:35:21Z","usd":19.2613},{"utc":"2026-11-22T00:35:32Z","usd":19.2875},{"utc":"2026-11-22T01:34:56Z","usd":19.2471},{"utc":"2026-11-22T02:35:08Z","usd":19.1708},{"utc":"2026-11-22T03:34:41Z","usd":19.6594},{"utc":"2026-11-22T04:35:23Z","usd":19.7417},{"utc":"2026-11-22T05:35:23Z","usd":19.516},{"utc":"2026-11-22T06:34:52Z","usd":19.6252},{"utc":"2026-11-22T06:58:57Z","usd":19.6692},{"utc":"2026-11-22T07:35:52Z","usd":19.7028},{"utc":"2026-11-22T08:35:12Z","usd":19.874}],"run":{"utc":"2026-11-22T08:33:00Z","result":"Signer healthy, falling market; 4 leads checked: 3 CLEAR (CYBERLEEK, Buttcoin, Lucia), 1 CONDITIONAL (SHELF, round trip 2.4%), 0 KILL; 3 ARM tickets written (re-arming the same three coins), no plain buys.","leads":[{"mint":"2g3NFpebwCV6Abz7AhmVC4xmsaczQXbqxHV4Khy4pump","symbol":"SHELF","dexId":"pumpswap","liquidityUsd":12430.77,"verdict":"CONDITIONAL","reasons":["sell_check: round-trip cost 2.397% exceeds 2% (two legs at max slippage 100 bps) at $0.91","sell_check: liquidity vs size not confirmed"],"ticket":null,"ticketStatus":null,"ticketNote":null},{"mint":"Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump","symbol":"Buttcoin","dexId":"pumpswap","liquidityUsd":492330.1,"verdict":"CLEAR","reasons":[],"ticket":"SOL-20261122-014","ticketStatus":"ARMED","ticketNote":"RISK CLEAR run 20261122T0833Z; batch order; arm (falling market, v47) | round trip -0.10% quoted at ticket time"},{"mint":"ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg","symbol":"CYBERLEEK","dexId":"raydium","liquidityUsd":341536.42,"verdict":"CLEAR","reasons":[],"ticket":"SOL-20261122-013","ticketStatus":"ARMED","ticketNote":"RISK CLEAR run 20261122T0833Z; batch order; arm (falling market, v47) | round trip 0.50% quoted at ticket time"},{"mint":"2FcsqRrhvgSfYxJWh32xW873vyqBZ9jmMyXqYSPgNtuZ","symbol":"Lucia","dexId":"raydium","liquidityUsd":14252.78,"verdict":"CLEAR","reasons":[],"ticket":"SOL-20261122-015","ticketStatus":"ARMED","ticketNote":"RISK CLEAR run 20261122T0833Z; batch order; arm (falling market, v47) | round trip 0.52% quoted at ticket time"}],"leadsFile":"LEADS-20261122T0833Z.json","floor":[{"mint":"2g3NFpebwCV6Abz7AhmVC4xmsaczQXbqxHV4Khy4pump","symbol":"SHELF","dexId":"pumpswap","liquidityUsd":12430.77,"verdict":"CONDITIONAL","reasons":["sell_check: round-trip cost 2.397% exceeds 2% (two legs at max slippage 100 bps) at $0.91","sell_check: liquidity vs size not confirmed"],"ticket":null,"ticketStatus":null,"ticketNote":null},{"mint":"Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump","symbol":"Buttcoin","dexId":"pumpswap","liquidityUsd":492330.1,"verdict":"CLEAR","reasons":[],"ticket":"SOL-20261122-014","ticketStatus":"ARMED","ticketNote":"RISK CLEAR run 20261122T0833Z; batch order; arm (falling market, v47) | round trip -0.10% quoted at ticket time"},{"mint":"ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg","symbol":"CYBERLEEK","dexId":"raydium","liquidityUsd":341536.42,"verdict":"CLEAR","reasons":[],"ticket":"SOL-20261122-013","ticketStatus":"ARMED","ticketNote":"RISK CLEAR run 20261122T0833Z; batch order; arm (falling market, v47) | round trip 0.50% quoted at ticket time"},{"mint":"2FcsqRrhvgSfYxJWh32xW873vyqBZ9jmMyXqYSPgNtuZ","symbol":"Lucia","dexId":"raydium","liquidityUsd":14252.78,"verdict":"CLEAR","reasons":[],"ticket":"SOL-20261122-015","ticketStatus":"ARMED","ticketNote":"RISK CLEAR run 20261122T0833Z; batch order; arm (falling market, v47) | round trip 0.52% quoted at ticket time"}],"found":4,"counts":{"CLEAR":3,"CONDITIONAL":1,"KILL":0,"STOP":0},"tickets":3},"runs":[{"utc":"2026-11-22T08:33:00Z","result":"Signer healthy, falling market; 4 leads checked: 3 CLEAR (CYBERLEEK, Buttcoin, Lucia), 1 CONDITIONAL (SHELF, round trip 2.4%), 0 KILL; 3 ARM tickets written (re-arming the same three coins), no plain buys.","hasResultLine":true},{"utc":"2026-11-22T07:34:00Z","result":"Signer healthy, falling market; 6 leads checked: 3 CLEAR (CYBERLEEK, Buttcoin, Lucia), 1 CONDITIONAL, 2 KILL; 3 ARM tickets written for the CLEARs, no plain buys.","hasResultLine":true},{"utc":"2026-11-22T06:57:00Z","result":"11 leads seen, RISK 3 CLEAR / 6 CONDITIONAL / 2 KILL / 0 STOP; 3 ARM tickets written (SOL-20261122-007 Buttcoin Cm6fNnMk, -008 CYBERLEEK ApZuxdpz, -009 Lucia 2FcsqRrh), no plain BUY; coins armed in a falling market.","hasResultLine":true},{"utc":"2026-11-22T06:33:00Z","result":"Light run, no RISK or SNIPER. Room 0 tickets ($3.42 of $5.65 at risk in 6 positions, ticket $0.90) and market falling. SCOUT found 8 leads; none checked. All 6 open positions read: no mint or freeze authority, no kill signal. 0 tickets written.","hasResultLine":true},{"utc":"2026-11-22T05:34:00Z","result":"Light run, no RISK or SNIPER. Room 0 tickets ($3.42 of $5.65 at risk in 6 positions, ticket $0.89) and market falling. SCOUT found 9 leads (3 new, 4 earlier CLEAR, 2 recheck); none checked. All 6 open positions read: no mint or freeze authority, no kill signal. 0 tickets written.","hasResultLine":true},{"utc":"2026-11-22T04:34:00Z","result":"Light run; signer fresh (status 11 s old, no halt), room 0 tickets ($3.42 of $5.70 at risk in 6 positions), market falling (market.buy false); SCOUT found 9 leads (4 new, 3 earlier CLEAR, 2 recheck), RISK and SNIPER skipped, no verdicts, 0 tickets; all 6 open positions show no mint or freeze authori","hasResultLine":true},{"utc":"2026-11-22T03:33:00Z","result":"Light run; signer fresh (status 8 s old, no halt), room 0 tickets ($3.42 of $5.68 at risk in 6 positions), market falling (market.buy false); SCOUT found 9 leads (3 new, 3 earlier CLEAR, 3 recheck), RISK and SNIPER skipped, no verdicts, 0 tickets; all 6 open positions show no mint or freeze authorit","hasResultLine":true},{"utc":"2026-11-22T02:33:00Z","result":"light run (room 0, market falling); 12 leads seen, none checked; 6 open positions' authority checks all clean; no tickets written.","hasResultLine":true},{"utc":"2026-11-22T01:33:00Z","result":"light run (room 0, market falling); 12 leads seen, none checked; 6 open positions' authority checks all clean; no tickets written.","hasResultLine":true},{"utc":"2026-11-22T00:34:00Z","result":"light run (room 0, market falling); 13 leads seen, none checked; 6 open positions' authority checks all clean; no tickets written.","hasResultLine":true},{"utc":"2026-11-21T23:34:00Z","result":"light run (room 0, market falling); 17 leads seen, none checked; 6 open positions' authority checks all clean; no tickets written.","hasResultLine":true},{"utc":"2026-11-21T22:33:00Z","result":"Light run, no tickets. Room 0 ($3.42 of $6.05 at risk in 6 positions) and the market is falling; SCOUT found 11 leads; RISK and SNIPER skipped; all 6 open positions show no mint or freeze authority.","hasResultLine":true}],"tickets":[{"ticket":"SOL-20261122-014","side":"ARM","mint":"Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump","status":"ARMED","created_by":"SNIPER"},{"ticket":"SOL-20261122-015","side":"ARM","mint":"2FcsqRrhvgSfYxJWh32xW873vyqBZ9jmMyXqYSPgNtuZ","status":"ARMED","created_by":"SNIPER"},{"ticket":"SOL-20261122-013","side":"ARM","mint":"ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg","status":"ARMED","created_by":"SNIPER"},{"ticket":"SOL-20261122-012","side":"ARM","mint":"2FcsqRrhvgSfYxJWh32xW873vyqBZ9jmMyXqYSPgNtuZ","status":"EXPIRED","created_by":"SNIPER"},{"ticket":"SOL-20261122-011","side":"ARM","mint":"Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump","status":"EXPIRED","created_by":"SNIPER"},{"ticket":"SOL-20261122-010","side":"ARM","mint":"ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg","status":"EXPIRED","created_by":"SNIPER"},{"ticket":"SOL-20261122-009","side":"ARM","mint":"2FcsqRrhvgSfYxJWh32xW873vyqBZ9jmMyXqYSPgNtuZ","status":"EXPIRED","created_by":"SNIPER"},{"ticket":"SOL-20261122-007","side":"ARM","mint":"Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump","status":"EXPIRED","created_by":"SNIPER"},{"ticket":"SOL-20261122-008","side":"ARM","mint":"ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg","status":"EXPIRED","created_by":"SNIPER"},{"ticket":"SOL-20261122-006","side":"SELL","mint":"F2k82EcxLtzekq1bfoGVdgp6EXZ5dLT1jE7g3LvQpump","status":"SENT","created_by":"OWNER"},{"ticket":"SOL-20261122-005","side":"SELL","mint":"x95HN3DWvbfCBtTjGm587z8suK3ec6cwQwgZNLbWKyp","status":"SENT","created_by":"OWNER"},{"ticket":"SOL-20261122-003","side":"SELL","mint":"Hh3oTaqDCKKfdBgsQEvxp9sUwyNf8x9qmKqEMLBWpump","status":"SENT","created_by":"OWNER"}],"trades":[{"side":"SELL","mint":"F2k82EcxLtzekq1bfoGVdgp6EXZ5dLT1jE7g3LvQpump","status":"SENT"},{"side":"SELL","mint":"x95HN3DWvbfCBtTjGm587z8suK3ec6cwQwgZNLbWKyp","status":"SENT"},{"side":"SELL","mint":"EdhTCqUxXRWQcUd5Fonyz9rapHAB6mABAuVkmPrtpump","status":"SENT"},{"side":"SELL","mint":"Hh3oTaqDCKKfdBgsQEvxp9sUwyNf8x9qmKqEMLBWpump","status":"SENT"},{"side":"SELL","mint":"ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg","status":"SENT"},{"side":"SELL","mint":"DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2","status":"SENT"}],"positions":[],"coins":{"openPnlUsd":0,"closedPnlUsd":-0.0854,"takePct":50.0,"stopPct":25.0,"timeStopHours":24.0,"timeStopBandPct":10.0,"maxPositions":6,"maxSlippageBps":100,"costGatePct":0.8,"open":[],"closed":[{"mint":"F2k82EcxLtzekq1bfoGVdgp6EXZ5dLT1jE7g3LvQpump","symbol":"PENGO","inUsd":0.9571,"outUsd":0.914,"pnlUsd":-0.0432,"pnlPct":-4.51,"why":"owner: free the slots for the armed trial"},{"mint":"x95HN3DWvbfCBtTjGm587z8suK3ec6cwQwgZNLbWKyp","symbol":"$HACHI","inUsd":0.4835,"outUsd":0.5408,"pnlUsd":0.0572,"pnlPct":11.84,"why":"owner: free the slots for the armed trial"},{"mint":"EdhTCqUxXRWQcUd5Fonyz9rapHAB6mABAuVkmPrtpump","symbol":"UNITY","inUsd":0.4907,"outUsd":0.5698,"pnlUsd":0.0792,"pnlPct":16.13,"why":null},{"mint":"Hh3oTaqDCKKfdBgsQEvxp9sUwyNf8x9qmKqEMLBWpump","symbol":"HODL","inUsd":0.4907,"outUsd":0.529,"pnlUsd":0.0383,"pnlPct":7.81,"why":"owner: free the slots for the armed trial"},{"mint":"ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg","symbol":"CYBERLEEK","inUsd":0.4907,"outUsd":0.4235,"pnlUsd":-0.0672,"pnlPct":-13.7,"why":null},{"mint":"DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2","symbol":"aura","inUsd":0.4907,"outUsd":0.488,"pnlUsd":-0.0027,"pnlPct":-0.56,"why":null},{"mint":"2FcsqRrhvgSfYxJWh32xW873vyqBZ9jmMyXqYSPgNtuZ","symbol":"Lucia","inUsd":0.4838,"outUsd":0.359,"pnlUsd":-0.1248,"pnlPct":-25.8,"why":null},{"mint":"y1AZt42vceCmStjW4zetK3VoNarC1VxJ5iDjpiupump","symbol":"FARTBOY","inUsd":0.9747,"outUsd":0.9914,"pnlUsd":0.0167,"pnlPct":1.72,"why":null},{"mint":"85cQsFgbi8mBZxiPppbpPXuV7j1hA8tBwhjF4gKW6mHg","symbol":"Rizzmas","inUsd":0.9699,"outUsd":0.9351,"pnlUsd":-0.0347,"pnlPct":-3.58,"why":null},{"mint":"7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3","symbol":"SLERF","inUsd":0.9719,"outUsd":0.967,"pnlUsd":-0.0049,"pnlPct":-0.5,"why":null},{"mint":"Ce2gx9KGXJ6C9Mp5b5x1sn9Mg87JwEbrQby4Zqo3pump","symbol":"neet","inUsd":0.9694,"outUsd":0.9701,"pnlUsd":0.0007,"pnlPct":0.07,"why":null}]},"armed":{"triggerPct":5.0,"minHistoryMinutes":15,"coins":[{"mint":"ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg","symbol":"CYBERLEEK","belowPct":-0.53,"readyUtc":"2026-11-22T08:50:48Z","expiresUtc":"2026-11-22T09:50:45Z","samples":156,"minutesLeft":21,"tries":0,"blocked":null,"px0":0.001555903462492062},{"mint":"Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump","symbol":"Buttcoin","belowPct":-1.69,"readyUtc":"2026-11-22T08:51:15Z","expiresUtc":"2026-11-22T09:51:12Z","samples":156,"minutesLeft":22,"tries":0,"blocked":null,"px0":0.005732598306922461},{"mint":"2FcsqRrhvgSfYxJWh32xW873vyqBZ9jmMyXqYSPgNtuZ","symbol":"Lucia","belowPct":-0.21,"readyUtc":"2026-11-22T08:51:42Z","expiresUtc":"2026-11-22T09:51:39Z","samples":156,"minutesLeft":22,"tries":0,"blocked":null,"px0":2.6671076414181514e-05}],"pausedSeconds":0,"pausedWhy":null},"symbols":{"2FcsqRrhvgSfYxJWh32xW873vyqBZ9jmMyXqYSPgNtuZ":"Lucia","7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3":"SLERF","85cQsFgbi8mBZxiPppbpPXuV7j1hA8tBwhjF4gKW6mHg":"Rizzmas","ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg":"CYBERLEEK","Ce2gx9KGXJ6C9Mp5b5x1sn9Mg87JwEbrQby4Zqo3pump":"neet","DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2":"aura","EdhTCqUxXRWQcUd5Fonyz9rapHAB6mABAuVkmPrtpump":"UNITY","F2k82EcxLtzekq1bfoGVdgp6EXZ5dLT1jE7g3LvQpump":"PENGO","Hh3oTaqDCKKfdBgsQEvxp9sUwyNf8x9qmKqEMLBWpump":"HODL","x95HN3DWvbfCBtTjGm587z8suK3ec6cwQwgZNLbWKyp":"$HACHI","y1AZt42vceCmStjW4zetK3VoNarC1VxJ5iDjpiupump":"FARTBOY","Cm6fNnMk7NfzStP9CZpsQA2v3jjzbcYGAxdJySmHpump":"Buttcoin"},"market":{"buy":false,"known":true,"why":"31% of 345 coins up over 6 h, 60% over 1 h: the market is falling, so no plain buys this run (armed tickets are not paused)","up6hShare":0.31,"up1hShare":0.601,"utc":"2026-11-22T08:33:00Z"},"trial":{"armedSoFar":9,"watching":3,"bought":0,"expired":6,"refused":0,"paper":"Paper -35% stop: 1 live stop-outs followed, 1 still open on paper; none resolved yet. Hourly marks; the live stop is unchanged."},"alerts":[],"ping":"https://deadeye-visits.dd-k7q2x.workers.dev/hit"}</script>
+<script>
+/* Deadeye instruments (v49): the clock, the state word and the target scope. They only read the view; nothing here decides anything. */
+window.DEADEYE = (function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg", lastRun = null, started = false;
+  function sv(tag, attrs, text) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+  function two(n) { return (n < 10 ? "0" : "") + n; }
+  function tick() {
+    var d = new Date(); document.getElementById("dclock").textContent = two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds());
+    var s = lastRun ? Math.max(0, Math.floor((Date.now() - lastRun) / 1000)) : null;
+    document.getElementById("dsweep").textContent = s == null ? "--:--" : (s >= 3600 ? Math.floor(s / 3600) + ":" : "") + two(Math.floor(s % 3600 / 60)) + ":" + two(s % 60);
+  }
+  function angle(mint) { var h = 0; for (var i = 0; i < mint.length; i++) h = (h * 31 + mint.charCodeAt(i)) % 3600; return h / 10 * Math.PI / 180; }
+  function once() {
+    started = true; tick(); setInterval(tick, 1000);
+    var tk = document.getElementById("ticks");
+    for (var a = 0; a < 360; a += 10) tk.append(sv("line", {"class": "tick", x1: 150, y1: 18, x2: 150, y2: a % 30 ? 22 : 27, transform: "rotate(" + a + " 150 150)"}));
+    var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches, w = document.getElementById("wordmark"), name = w.textContent, n = 0;
+    if (!still) { var iv = setInterval(function () {           /* the name resolves out of noise once, as the panels power up */
+      n++; var out = ""; for (var i = 0; i < name.length; i++) out += i < n / 2 ? name[i] : "ABCDEFGHJKLMNPRSTUVXYZ0123456789"[Math.floor(Math.random() * 32)];
+      w.textContent = out; if (n >= name.length * 2) { clearInterval(iv); w.textContent = name; } }, 55); }
+    setTimeout(function () { document.body.classList.remove("boot"); }, 2200);
+  }
+  return function (D) {
+    if (!started) once();
+    var sg = D.signer || {}, urgent = (D.alerts || []).some(function (a) { return a.level === "ALERT"; });
+    var st = document.getElementById("dstate"), ok = sg.state === "running" && !D.halted;
+    st.textContent = D.halted ? "Halted" : sg.state === "running" ? "Online" : sg.state === "silent" ? "Signer silent" : "No signal";
+    st.className = ok ? "good" : "bad";
+    document.body.classList.toggle("alert", !ok || urgent);
+    var r0 = (D.runs || [])[0]; lastRun = r0 && r0.utc ? Date.parse(r0.utc) : null; tick();
+
+    /* scope: the centre is the buy level, the dashed ring is the coin's usual price; a coin moves inward as it dips */
+    var AR = D.armed, B = document.getElementById("blips"); B.textContent = "";
+    var need = AR && typeof AR.triggerPct === "number" ? AR.triggerPct : 5, coins = AR ? AR.coins || [] : [], nearest = null;
+    coins.forEach(function (c) {
+      var known = typeof c.belowPct === "number", gap = known ? need - c.belowPct : null;
+      var r = known ? Math.max(0, Math.min(132, gap / need * 88)) : 118, a = angle(String(c.mint));
+      var x = 150 + r * Math.sin(a), y = 150 - r * Math.cos(a);
+      var cls = !known ? "learn" : gap <= 0 ? "hit" : gap <= need * 0.4 ? "near" : "";
+      var g = sv("g", {"class": "blip " + cls});
+      if (known) g.append(sv("circle", {"class": "halo", cx: x, cy: y, r: 4}));
+      g.append(sv("circle", {cx: x, cy: y, r: known ? 3 : 2}), sv("text", {x: x + (x > 215 ? -7 : 7), y: y + 3, "text-anchor": x > 215 ? "end" : "start"}, String(c.symbol || String(c.mint).slice(0, 4)).slice(0, 9)));
+      B.append(g);
+      if (known && (nearest == null || gap < nearest.gap)) nearest = {gap: gap, sym: c.symbol || String(c.mint).slice(0, 4)};
+    });
+    document.getElementById("r-armed").textContent = AR ? coins.length : "off";
+    document.getElementById("r-trig").textContent = AR ? "−" + need + "%" : "n/a";
+    document.getElementById("r-near").textContent = nearest ? (nearest.gap <= 0 ? "AT LEVEL" : nearest.gap.toFixed(1) + "% away") : "n/a";
+    var TR = D.trial, tb = document.getElementById("trial"); tb.hidden = !(TR && TR.armedSoFar);
+    if (TR) { document.getElementById("t-all").textContent = TR.armedSoFar; document.getElementById("t-buy").textContent = TR.bought; document.getElementById("t-exp").textContent = TR.expired; document.getElementById("t-ref").textContent = TR.refused; }
+    var pp = document.getElementById("paper"); pp.hidden = !(TR && TR.paper); pp.textContent = TR && TR.paper ? TR.paper : "";
+    var C = D.coins || {}, T = D.today || {}, RL = document.getElementById("rules"); RL.textContent = "";
+    function rule(k, v) { if (v == null) return; var a = document.createElement("dt"), b = document.createElement("dd"); a.textContent = k; b.textContent = v; RL.append(a, b); }
+    function money(v) { return typeof v === "number" ? "$" + v.toFixed(2) : null; }
+    var open = (D.positions || []).length;
+    rule("Entry", AR ? "dip buys only, " + need + "% under the hour's usual price" : "hourly buys");
+    rule("Trade size", money(T.maxTicketUsd));
+    rule("Positions", typeof C.maxPositions === "number" ? open + " of " + C.maxPositions : null);
+    rule("At risk", money(T.atRiskUsd) && money(T.maxTotalUsd) ? money(T.atRiskUsd) + " of " + money(T.maxTotalUsd) : null);
+    rule("Cost limit", typeof C.costGatePct === "number" ? "round trip under " + C.costGatePct + "%" : null);
+    rule("Stop loss", typeof C.stopPct === "number" ? "sell at −" + C.stopPct + "%" : null);
+    rule("Take profit", typeof C.takePct === "number" ? "sell at +" + C.takePct + "%" : null);
+    rule("Time stop", typeof C.timeStopHours === "number" ? "after " + C.timeStopHours + " h if within ±" + C.timeStopBandPct + "%" : null);
+    rule("Day's loss halt", typeof T.lossHaltPct === "number" ? "−" + T.lossHaltPct + "%" : null);
+    rule("Fee budget today", money(T.feeBudgetUsd));
+    document.getElementById("scopenote").textContent = !AR ? "The signer is not arming coins, so the scope is empty."
+      : !coins.length ? "Nothing armed. The next run with room arms the coins that pass every check."
+      : AR.pausedSeconds > 0 ? "Watching is paused: " + (AR.pausedWhy || "the signer is busy") + "."
+      : "Each mark is an armed coin. It moves toward the centre as its price dips; at the centre the signer checks it again and buys. Grey marks on the rim are still being measured" + (nearest ? "; closest now is " + nearest.sym + "." : ".");
+  };
+})();
+</script>
+<script>
+(function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg", GEN = 0, SNAP = null, stations = {};
+  var SEEN = {run: null, at: {}};      /* a run in progress: where each token already stands on the floor, so only new verdicts move */
+  function boot(D, keepFloor) {
+  var run = D.run || {leads: [], counts: {}};
+  var all = run.leads || [], leads = run.floor || all, found = run.found || all.length;
+  var going = run.inProgress || null;
+  if (SEEN.run !== run.utc) SEEN = {run: run.utc, at: {}};
+  var c = run.counts || {}, parts = [];
+  ["CLEAR", "CONDITIONAL", "STOP", "KILL"].forEach(function (v) { if (c[v]) parts.push(c[v] + " " + {CLEAR: "clear", CONDITIONAL: "hold", STOP: "failed", KILL: "kill"}[v]); });
+  var w = D.wallet || {}, pos = D.positions || [];
+  ["pills", "tiles", "verdicts", "holdings", "orders", "runs", "coins", "coinsum", "closed", "armed", "visitors"].forEach(function (id) { document.getElementById(id).textContent = ""; });
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function sv(tag, attrs, text) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+  function usd(v, d) { return typeof v === "number" ? "$" + v.toLocaleString("en-US", {minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d}) : "n/a"; }
+  function short(m) { m = String(m || ""); return m.length > 12 ? m.slice(0, 4) + "…" + m.slice(-4) : m; }
+  function isMint(m) { return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(m || "")); }
+  function mintLink(m, label) { if (!isMint(m)) return el("span", "m", label || String(m || "")); var a = el("a", "m", label || short(m)); a.href = "https://solscan.io/token/" + m; return a; }
+  function span(secs) { secs = Math.max(0, Math.round(secs)); if (secs >= 86400) return Math.floor(secs / 86400) + " d"; if (secs >= 3600) return Math.floor(secs / 3600) + " h " + Math.floor(secs % 3600 / 60) + " min"; if (secs >= 60) return Math.floor(secs / 60) + " min"; return secs + " s"; }
+  function before(utc) { var t = Date.parse(utc), b = Date.parse(D.built); return isNaN(t) || isNaN(b) ? "time unknown" : span((b - t) / 1000) + " before the snapshot"; }
+  function clock(utc) { var t = new Date(utc); return isNaN(t) ? "unknown" : t.toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"}); }
+  function sym(l) { return String(l.symbol || short(l.mint)).slice(0, 7); }
+  function row(parent, left, right) { var r = el("div", "row"); var l = el("div", "l"); l.append(left); var rr = el("div", "r"); [].concat(right).forEach(function (x) { rr.append(x); }); r.append(l, rr); parent.append(r); return rr; }
+  function tag(text, cls) { return el("span", "tagv " + (cls || ""), text); }
+  var VC = {CLEAR: "good", CONDITIONAL: "warn", KILL: "bad", STOP: "stop"};
+  var VWORD = {CLEAR: "CLEAR", CONDITIONAL: "HOLD", KILL: "KILL", STOP: "CHECK FAILED"};
+
+  /* ---------- header ---------- */
+  function drawSnap() {
+    var s = document.getElementById("snap"); s.textContent = "";
+    var age = (Date.now() - Date.parse(D.built)) / 1000;
+    if (D.public) { s.append("Public view. Desk data from ", el("b", null, clock(D.built)), D.pricesLive ? " · prices followed live, last " : " · prices as of the snapshot", D.pricesLive ? el("b", null, new Date(D.pricesLive).toLocaleTimeString()) : ""); return; }
+    s.append(D.live ? "Live · updated " : "Snapshot ", el("b", null, clock(D.built)), " · ", el("b", age > 5 * 3600 ? "bad" : null, isNaN(age) ? "age unknown" : span(age) + " old"));
+    if (D.live && D.chain) s.append(" · ", el("b", D.chain === "live" ? null : "bad", D.chain === "live" ? "instant updates on" : "instant updates " + (D.chain === "reconnecting" ? "reconnecting" : "off")));
+    if (age > 5 * 3600) s.lastChild.style.color = "var(--bad)";
+  }
+  drawSnap(); if (SNAP) clearInterval(SNAP); SNAP = setInterval(drawSnap, D.live ? 1000 : 30000);
+  var pills = document.getElementById("pills");
+  var sg = D.signer || {};
+  pills.append(el("span", "pill " + (sg.state === "running" ? "good" : "bad"),
+    sg.state === "running" ? "Signer running" : sg.state === "silent" ? "Signer silent " + span(sg.ageSeconds || 0) : "Signer: no status"));
+  pills.append(el("span", "pill " + (D.halted ? "bad" : "good"), D.halted ? "Halted" : "Trading allowed"));
+  (D.alerts || []).forEach(function (a) { var ap = el("span", "pill " + (a.level === "ALERT" ? "bad" : "warn"), (a.level === "ALERT" ? "Needs you: " : "Heads-up: ") + String(a.what || "")); pills.append(ap); });
+  var mk = D.market;
+  if (mk && mk.known) { var mp = el("span", "pill " + (mk.buy ? "good" : "warn"), mk.buy ? "Market rising" : D.armed ? "Market falling: dip buys only" : "Market falling: not buying"); pills.append(mp); if (mk.why) pills.append(el("div", "pillnote", String(mk.why).split(":")[0])); }
+  var lastRun = (D.runs || [])[0];
+  pills.append(el("span", "pill " + (going ? "good" : lastRun ? "flow" : "warn"), going ? "Agents running now" : lastRun ? "Agents ran " + before(lastRun.utc).replace(" before the snapshot", " earlier") : "No agent runs yet"));
+  document.getElementById("nowtag").textContent = going ? "LIVE RUN" : "REPLAY";
+
+  /* ---------- the floor ---------- */
+  if (keepFloor) { var ws = stations.wallet && stations.wallet.querySelector(".stat"); if (ws) ws.textContent = usd(w.totalUsd); }
+  else {
+  var myGen = ++GEN;
+  var floor = document.getElementById("floor");
+  Array.prototype.slice.call(floor.children).forEach(function (n) { if (n.tagName.toLowerCase() !== "title") n.remove(); });
+  stations = {};
+  var Y = 215, DOCK = 240, X = {feed: 62, scout: 200, risk: 380, junction: 436, sniper: 552, mailbox: 704, signer: 856, wallet: 986};
+  function line(x1, y1, x2, y2, cls) { floor.append(sv("line", {x1: x1, y1: y1, x2: x2, y2: y2, "class": "link " + (cls || "")})); }
+  line(X.feed + 26, Y, X.scout - 46, Y); line(X.scout + 46, Y, X.risk - 46, Y); line(X.risk + 46, Y, X.sniper - 46, Y);
+  line(X.sniper + 46, Y, X.mailbox - 46, Y);
+  line(X.mailbox + 46, Y, X.signer - 46, Y, sg.state === "running" ? "live" : "");
+  line(X.signer + 46, Y, X.wallet - 46, Y);
+  line(X.junction, 78, X.junction, 358); line(X.junction, 78, 452, 78); line(X.junction, 358, 452, 358);
+  line(810, 332, X.signer, Y + 25, "watch"); line(930, 332, X.wallet, Y + 25, "watch");
+  floor.append(sv("rect", {x: 452, y: 46, width: 330, height: 64, rx: 6, "class": "zone"}), sv("text", {x: 452, y: 36, "class": "zl"}, "ON HOLD / NOT CLEARED"));
+  floor.append(sv("rect", {x: 452, y: 326, width: 330, height: 64, rx: 6, "class": "zone"}), sv("text", {x: 452, y: 406, "class": "zl"}, "KILLED / NEVER BUY"));
+  floor.append(sv("circle", {cx: X.feed, cy: Y, r: 24, "class": "zone"}), sv("text", {x: X.feed, y: Y + 3, "class": "zl", "text-anchor": "middle"}, "FEED"));
+
+  function station(key, cx, cy, name, sub, stat, cls, small) {
+    var w = small ? 84 : 92, h = small ? 40 : 50;
+    var g = sv("g", {"class": "st " + (small ? "small " : "") + (cls || "")});
+    if (key === "signer") g.append(sv("rect", {x: cx - w / 2, y: cy - h / 2, width: w, height: h, rx: 7, "class": "beat" + (sg.state === "running" ? " on" : "")}));
+    g.append(sv("rect", {x: cx - w / 2, y: cy - h / 2, width: w, height: h, rx: 7, "class": "box"}));
+    g.append(sv("text", {x: cx, y: cy + (small ? 2 : 1), "class": "nm"}, name));
+    if (sub) g.append(sv("text", {x: cx, y: cy + (small ? 13 : 15), "class": "sub"}, sub));
+    g.append(sv("text", {x: cx, y: cy - h / 2 - 8, "class": "stat"}, stat || ""));
+    g.append(sv("circle", {cx: cx + w / 2 - 9, cy: cy - h / 2 + 9, r: 5, "class": "spin"}));
+    floor.append(g); stations[key] = g; return g;
+  }
+  station("scout", X.scout, Y, "SCOUT", "finds tokens", found + (found === 1 ? " lead" : " leads"));
+  station("risk", X.risk, Y, "RISK", "six checks", parts.join(" · ") || "nothing checked");
+  station("sniper", X.sniper, Y, "SNIPER", "writes tickets", (run.tickets || 0) + (run.tickets === 1 ? " ticket" : " tickets"));
+  station("mailbox", X.mailbox, Y, "MAILBOX", "GitHub", "");
+  var sgStat = station("signer", X.signer, Y, "SIGNER", "your VM", D.halted ? "halted" : sg.state === "running" ? "running" : sg.state === "silent" ? "silent" : "no status", sg.state === "running" && !D.halted ? "" : "down");
+  sgStat.querySelector(".stat").style.fill = sg.state === "running" && !D.halted ? "var(--good)" : "var(--bad)";
+  station("wallet", X.wallet, Y, "WALLET", "Solana", usd(w.totalUsd));
+  station("rug", 810, 352, "RUG", "watches for rugs", pos.length ? "watching " + pos.length : "nothing open", "", true);
+  station("exit", 930, 352, "EXIT", "sells", pos.length ? pos.length + " open" : "nothing to sell", "", true);
+
+  /* chips and their routes */
+  var chips = [], captions = [], busy = {scout: [], risk: [], sniper: [], signer: []};
+  var slots = {hold: 0, kill: 0}, queues = {scout: 0, sniper: 0, mailbox: 0, signer: 0, wallet: 0};
+  function slot(kind) { var i = slots[kind]++; return [486 + (i % 5) * 62, (kind === "hold" ? 66 : 346) + (Math.floor(i / 5) % 2) * 24]; }
+  function queue(key) { return [X[key], Y + 62 + (queues[key]++ % 5) * 22]; }
+  function say(t, text) { captions.push({t: t, text: text}); }
+  var fresh = 0, checkingNow = null;
+  leads.forEach(function (l, i) {
+    var state = (l.verdict || "") + "|" + (l.ticket || "") + "|" + (l.ticketStatus || "");
+    var known = going && SEEN.at[l.mint] === state, waiting = going && !l.verdict;
+    if (waiting && !checkingNow) checkingNow = l;
+    var s = sym(l), t = going ? 0.3 + (known || waiting ? 0 : fresh++) * 1.6 : 0.8 + i * 1.5, pts = [{t: t, x: X.feed, y: Y}], cls = [{t: 0, c: "none"}];
+    var quiet = known || waiting, sayAll = say;
+    if (quiet) say = function () {};
+    function go(x, y, dt) { t += dt; pts.push({t: t, x: x, y: y}); }
+    function hold(dt) { t += dt; pts.push({t: t, x: pts[pts.length - 1].x, y: pts[pts.length - 1].y}); }
+    go(X.scout, DOCK, 0.9); if (!quiet) busy.scout.push([t - 0.2, t + 0.4]); say(t, "SCOUT found " + s + (l.dexId ? " on " + l.dexId : "") + (typeof l.liquidityUsd === "number" ? ", pool " + usd(l.liquidityUsd, 0) : ""));
+    hold(0.4);
+    if (!l.verdict && going && checkingNow === l) { go(X.risk, DOCK, 0.6); }
+    else if (!l.verdict) { var q = queue("scout"); go(q[0], q[1], 0.5); say(t, s + " was logged. RISK did not check it."); }
+    else {
+      go(X.risk, DOCK, 1.1); say(t, "RISK is checking " + s + "…"); if (!quiet) busy.risk.push([t, t + 1.2]); hold(1.2);
+      cls.push({t: t, c: l.verdict}); say(t, s + ": " + (VWORD[l.verdict] || l.verdict) + (l.reasons && l.reasons[0] ? ". " + l.reasons[0] : ""));
+      go(X.junction, Y, 0.4);
+      if (l.verdict === "CLEAR") {
+        go(X.sniper, DOCK, 0.7); if (!quiet) busy.sniper.push([t, t + 0.6]); hold(0.6);
+        if (!l.ticket) { var q1 = queue("sniper"); go(q1[0], q1[1], 0.5); say(t, s + " is CLEAR. SNIPER wrote no ticket."); }
+        else {
+          say(t, "SNIPER wrote ticket " + l.ticket + " for " + s); go(X.mailbox, DOCK, 0.8); hold(0.4);
+          var st = String(l.ticketStatus || "PENDING").toUpperCase();
+          if (st === "PENDING") { var q2 = queue("mailbox"); go(q2[0], q2[1], 0.5); say(t, "Ticket for " + s + " is waiting for the signer."); }
+          else {
+            go(X.signer, DOCK, 0.8); say(t, "SIGNER runs RISK again on " + s + "…"); if (!quiet) busy.signer.push([t, t + 1]); hold(1);
+            if (st === "SENT" || st === "SETTLED") { go(X.wallet, Y + 62 + (queues.wallet++ % 5) * 22, 0.9); say(t, "Bought " + s + ". It is in the wallet."); }
+            else { cls.push({t: t, c: "refused"}); var q3 = queue("signer"); go(q3[0], q3[1], 0.5); say(t, "SIGNER did not buy " + s + " (" + st.toLowerCase() + ")" + (l.ticketNote ? ": " + l.ticketNote : "")); }
+          }
+        }
+      } else {
+        var kind = l.verdict === "KILL" ? "kill" : "hold", p = slot(kind);
+        go(X.junction, p[1], 0.5); go(p[0], p[1], 0.6);
+      }
+    }
+    say = sayAll;
+    if (quiet) {                           /* already where it belongs: draw it there, no trip across the floor */
+      var endPt = pts[pts.length - 1], endCls = cls[cls.length - 1].c;
+      pts = [{t: 0, x: endPt.x, y: endPt.y}]; cls = [{t: 0, c: endCls}];
+    }
+    if (going) SEEN.at[l.mint] = state;
+    var g = sv("g", {"class": "chip none", opacity: 0}), wd = s.length * 6.2 + 14;
+    g.append(sv("rect", {x: -wd / 2, y: -9, width: wd, height: 18, rx: 4}), sv("text", {x: 0, y: 3.5}, s));
+    floor.append(g); chips.push({g: g, pts: pts, cls: cls, cur: "none"});
+  });
+  if (going) busy.risk.push([0, 1e9]);
+  var summary = going ? "Run in progress: RISK has checked " + (going.checked != null ? going.checked : "some") + " of " + (going.total || found) + (parts.length ? " (" + parts.join(", ") + ")" : "") + "." + (checkingNow ? " Now on " + sym(checkingNow) + "…" : "")
+              : leads.length ? "Last run: " + found + " found" + (parts.length ? ", " + parts.join(", ") : "") + ", " + (run.tickets || 0) + " ticket" + (run.tickets === 1 ? "" : "s") + "."
+                             : (run.utc ? "Last run found no tokens to check." + (run.result ? " " + run.result : "") : "No agent run has been recorded yet.");
+  if (!leads.length) { say(0.3, "SCOUT asked the feed for new tokens…"); busy.scout.push([0.3, 2.2]); say(2.4, summary); }
+  var endT = chips.reduce(function (m, ch) { return Math.max(m, ch.pts[ch.pts.length - 1].t); }, 2.4);
+  if (leads.length) say(endT + 0.6, summary);
+  var LOOP = going ? 1e9 : endT + 7;      /* a run in progress does not loop: tokens stay put until the next verdict arrives */
+  captions.sort(function (a, b) { return a.t - b.t; });
+  document.getElementById("fine").textContent = going ? "The agents started this run at " + clock(run.utc) + " and post their progress every few tokens. The floor shows the " + leads.length + " tokens RISK is working through now; the list below has all " + found + "."
+    : run.utc ? "Replaying the agent run from " + clock(run.utc) + ", " + before(run.utc) + "." + (found > leads.length ? " The floor shows " + leads.length + " of the " + found + " tokens; the list below has them all." : "") : "";
+
+  var nowEl = document.getElementById("now");
+  function ease(u) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2; }
+  function frame(t) {
+    chips.forEach(function (ch) {
+      var p = ch.pts, x, y;
+      if (t < p[0].t) { ch.g.setAttribute("opacity", 0); return; }
+      var k = p.length - 1; for (var i = 1; i < p.length; i++) { if (t < p[i].t) { k = i; break; } }
+      if (t >= p[p.length - 1].t) { x = p[k].x; y = p[k].y; }
+      else { var a = p[k - 1], b = p[k], u = ease((t - a.t) / Math.max(0.001, b.t - a.t)); x = a.x + (b.x - a.x) * u; y = a.y + (b.y - a.y) * u; }
+      var fade = Math.min(1, (t - p[0].t) / 0.3) * (t > LOOP - 0.8 ? Math.max(0, (LOOP - t) / 0.8) : 1);
+      ch.g.setAttribute("opacity", fade.toFixed(2)); ch.g.setAttribute("transform", "translate(" + x.toFixed(1) + "," + y.toFixed(1) + ")");
+      var cn = "none"; ch.cls.forEach(function (cc) { if (t >= cc.t) cn = cc.c; });
+      if (cn !== ch.cur) { ch.g.setAttribute("class", "chip " + cn); ch.cur = cn; }
+    });
+    Object.keys(busy).forEach(function (key) { var on = busy[key].some(function (iv) { return t >= iv[0] && t <= iv[1]; }); stations[key].classList.toggle("busy", on); });
+    var text = ""; for (var i = 0; i < captions.length && captions[i].t <= t; i++) text = captions[i].text;
+    if (nowEl.textContent !== text) nowEl.textContent = text;
+  }
+  var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (still) { frame(LOOP - 2); nowEl.textContent = summary; }
+  else { var t0 = null; (function tick(ts) { if (myGen !== GEN) return; if (t0 === null) t0 = ts; frame(((ts - t0) / 1000) % LOOP); requestAnimationFrame(tick); })(performance.now()); }
+  }
+
+  /* ---------- figures ---------- */
+  var tiles = document.getElementById("tiles"), T = D.today || {};
+  function tile(k, v, n, cls) { var t = el("div", "tile " + (cls || "")); t.append(el("div", "k", k), el("div", "v", v), el("div", "n", n)); tiles.append(t); return t; }
+  var wt = tile("Wallet", usd(w.totalUsd), typeof w.totalSol === "number" ? w.totalSol.toFixed(4) + " SOL" + (w.solUsd ? " · SOL at " + usd(w.solUsd) : "") : D.public ? "as of the last run" + (w.solUsd ? " · SOL at " + usd(w.solUsd) : "") : (w.error || "balance not available"));
+  var H = (D.history || []).filter(function (h) { return typeof h.usd === "number"; });
+  if (H.length >= 2) {
+    var lo = Math.min.apply(null, H.map(function (h) { return h.usd; })), hi = Math.max.apply(null, H.map(function (h) { return h.usd; })), pad = (hi - lo) * 0.15 || 0.5;
+    var sp = sv("svg", {id: "spark", viewBox: "0 0 200 44", preserveAspectRatio: "none", role: "img", "aria-label": "Wallet value over " + H.length + " snapshots, from " + usd(H[0].usd) + " to " + usd(H[H.length - 1].usd)});
+    var pt = H.map(function (h, i) { return [i / (H.length - 1) * 196 + 2, 40 - (h.usd - lo + pad) / (hi - lo + 2 * pad) * 36]; });
+    var dd = pt.map(function (p, i) { return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join(" ");
+    sp.append(sv("path", {d: dd + " L198 44 L2 44 Z", fill: "var(--flow)", "fill-opacity": 0.12}), sv("path", {d: dd, fill: "none", stroke: "var(--flow)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke"}),
+              sv("circle", {cx: pt[pt.length - 1][0], cy: pt[pt.length - 1][1], r: 2.5, fill: "var(--flow)"}));
+    wt.append(sp); wt.append(el("div", "n", usd(lo) + " to " + usd(hi) + " over " + H.length + " snapshots"));
+  } else wt.append(el("div", "n", "The value chart starts once there are two snapshots."));
+  var ch = T.changeUsd;
+  var cp = T.changePct;
+  tile("Today", typeof cp === "number" ? (cp >= 0 ? "+" : "−") + Math.abs(cp).toFixed(2) + "%" : typeof ch === "number" ? (ch >= 0 ? "+" : "−") + usd(Math.abs(ch)) : "n/a",
+       (typeof ch === "number" ? (ch >= 0 ? "+" : "−") + usd(Math.abs(ch)) + " " : "") +
+       (T.startUsd ? "since " + usd(T.startUsd) + " at the start of the day (4 PM Pacific). SOL's own price moves are left out" : "start-of-day value not published"),
+       typeof ch === "number" ? (ch >= 0 ? "good" : "bad") : "");
+  var P = D.profit;
+  if (P && typeof P.gainSol === "number") {
+    var up = P.gainSol > 0;
+    if (D.public) tile("Profit so far", (P.gainSol >= 0 ? "+" : "−") + usd(Math.abs(P.gainUsd || 0)), "Against everything put into the wallet. Counted in SOL, so SOL's own price moves do not count.", up ? "good" : P.gainSol < 0 ? "bad" : "");
+    else tile("Profit you could take", up ? "+" + usd(P.gainUsd) : "nothing yet",
+         (up ? "half is " + usd(P.halfUsd) + " (" + P.halfSol.toFixed(4) + " SOL). Send it from Phantom to another wallet; the desk adjusts. "
+             : usd(Math.abs(P.gainUsd || 0)) + " below what you put in. ") +
+         "In: " + P.putInSol.toFixed(4) + " SOL" + (P.takenOutSol > 0 ? ", out: " + P.takenOutSol.toFixed(4) + " SOL" : "") + ". Counted in SOL, so SOL's own price moves do not count." +
+         (P.error ? " (" + P.error + ")" : ""), up ? "good" : "");
+  }
+  var rt = tile("Largest trade allowed", usd(T.maxTicketUsd), usd(T.atRiskUsd) + " of " + usd(T.maxTotalUsd) + " at risk in " + pos.length + " position" + (pos.length === 1 ? "" : "s"));
+  var m = el("div", "meter"), mi = el("i"); mi.style.width = (T.maxTotalUsd ? Math.min(100, T.atRiskUsd / T.maxTotalUsd * 100) : 0) + "%"; m.append(mi); rt.append(m);
+  tile("Buying stops for the day at", typeof T.lossHaltPct === "number" ? "−" + T.lossHaltPct + "%" : "n/a", D.halted ? "Halted now: " + (D.haltReason || "") : "fee budget today " + usd(T.feeBudgetUsd), D.halted ? "bad" : "");
+
+  /* ---------- your coins ---------- */
+  var C = D.coins || {open: [], closed: []}, CB = document.getElementById("coins"), TAKE = C.takePct || 50, STOP = C.stopPct || 25;
+  function signed(v, unit) {
+    if (typeof v !== "number") return "n/a";
+    var text = unit === "$" ? usd(Math.abs(v)) : Math.abs(v).toFixed(1) + "%", zero = /^\$?0\.0+%?$/.test(text);
+    return (zero ? "" : v > 0 ? "+" : "−") + text;
+  }
+  function tone(v) { return typeof v !== "number" ? "" : v > 0.05 ? "good" : v < -0.05 ? "bad" : ""; }
+  function held(from, to) { var a = Date.parse(from), b = to ? Date.parse(to) : Date.parse(D.built); return isNaN(a) || isNaN(b) ? "" : span((b - a) / 1000); }
+  function name(c) { var d = el("div", "nm", String(c.symbol || short(c.mint)).slice(0, 14)); d.append(mintLink(c.mint, "chart")); var a = d.lastChild; if (a.href) a.href = "https://dexscreener.com/solana/" + c.mint; return d; }
+  function lane(p) {
+    var box = el("div", "lane"), lo = -STOP, hi = TAKE, at = function (v) { return Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)); };
+    box.append(el("div", "track"));
+    var z = el("div", "zero"); z.style.left = at(0) + "%"; box.append(z);
+    var l1 = el("div", "lab l", "sell at −" + STOP + "%"), l2 = el("div", "lab r", "sell at +" + TAKE + "%"); box.append(l1, l2);
+    if (typeof p === "number") { var d = el("div", "dot " + tone(p)); d.style.left = at(p) + "%"; d.title = signed(p) + " now"; box.append(d); }
+    box.setAttribute("role", "img"); box.setAttribute("aria-label", typeof p === "number" ? signed(p) + ", between the stop at −" + STOP + "% and the take at +" + TAKE + "%" : "no price");
+    return box;
+  }
+  function mini(points) {
+    if (!points || points.length < 3) return el("div", "side", D.live ? "chart fills in as the page runs" : "");
+    var vals = points.map(function (q) { return q[1]; }), lo = Math.min.apply(null, vals.concat([0])), hi = Math.max.apply(null, vals.concat([0])), pad = (hi - lo) * 0.15 || 1;
+    var g = sv("svg", {viewBox: "0 0 160 26", preserveAspectRatio: "none", role: "img", "aria-label": "Last " + held(points[0][0], points[points.length - 1][0]) + ": from " + signed(vals[0]) + " to " + signed(vals[vals.length - 1])});
+    var y = function (v) { return 24 - (v - lo + pad) / (hi - lo + 2 * pad) * 22; };
+    g.append(sv("line", {x1: 0, x2: 160, y1: y(0), y2: y(0), stroke: "var(--line)", "stroke-dasharray": "2 3"}));
+    g.append(sv("path", {d: vals.map(function (v, i) { return (i ? "L" : "M") + (i / (vals.length - 1) * 158 + 1).toFixed(1) + " " + y(v).toFixed(1); }).join(" "), fill: "none",
+                         stroke: vals[vals.length - 1] >= 0 ? "var(--good)" : "var(--bad)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke"}));
+    var wrap = el("div"); wrap.append(g, el("div", "side", "last " + held(points[0][0], points[points.length - 1][0]))); return wrap;
+  }
+  function big(c) {                                                    /* v43: price since the buy, with the buy, stop and take marked */
+    var ch = c.chart;
+    if (!ch || !ch.points || ch.points.length < 2) return null;
+    var P = ch.points, W = 1000, Hh = 120, padL = 4, padR = 4;
+    var t0 = P[0][0], t1 = P[P.length - 1][0], vals = P.map(function (q) { return q[1]; });
+    var lo = Math.min.apply(null, vals.concat([0])), hi = Math.max.apply(null, vals.concat([0]));
+    if (hi - lo < 4) { var mid = (hi + lo) / 2; lo = mid - 2; hi = mid + 2; }
+    var pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
+    var showTake = TAKE <= hi + (hi - lo) * 0.6, showStop = -STOP >= lo - (hi - lo) * 0.6;   /* draw a line only when it is near enough to matter */
+    if (showTake) hi = Math.max(hi, TAKE + (hi - lo) * 0.05); if (showStop) lo = Math.min(lo, -STOP - (hi - lo) * 0.05);
+    var x = function (t) { return padL + (t - t0) / Math.max(1, t1 - t0) * (W - padL - padR); }, y = function (v) { return 6 + (hi - v) / (hi - lo) * (Hh - 12); };
+    var g = sv("svg", {viewBox: "0 0 " + W + " " + Hh, preserveAspectRatio: "none", class: "bigchart", role: "img",
+                       "aria-label": "Price since the buy: now " + signed(vals[vals.length - 1]) + ", low " + signed(Math.min.apply(null, vals)) + ", high " + signed(Math.max.apply(null, vals))});
+    function hline(v, color, label, dash) {
+      g.append(sv("line", {x1: padL, x2: W - padR, y1: y(v), y2: y(v), stroke: color, "stroke-dasharray": dash || "4 4", "vector-effect": "non-scaling-stroke"}));
+    }
+    hline(0, "var(--muted)", "bought", "2 4");
+    if (showTake) hline(TAKE, "var(--good)", "+" + TAKE + "% sell");
+    if (showStop) hline(-STOP, "var(--bad)", "−" + STOP + "% sell");
+    if (ch.boughtMs > t0) g.append(sv("line", {x1: x(ch.boughtMs), x2: x(ch.boughtMs), y1: 4, y2: Hh - 4, stroke: "var(--accent, #8aa8ff)", "stroke-dasharray": "3 3", "vector-effect": "non-scaling-stroke"}));
+    var stopAt = ch.boughtMs + (C.timeStopHours || 24) * 3600 * 1000;
+    if (stopAt > t0 && stopAt <= t1) g.append(sv("line", {x1: x(stopAt), x2: x(stopAt), y1: 4, y2: Hh - 4, stroke: "var(--warn, #e6b450)", "stroke-dasharray": "3 3", "vector-effect": "non-scaling-stroke"}));
+    var after = P.filter(function (q) { return q[0] >= ch.boughtMs; }), before = P.filter(function (q) { return q[0] <= ch.boughtMs; });
+    function path(pts, color, width) { if (pts.length < 2) return; g.append(sv("path", {d: pts.map(function (q, i) { return (i ? "L" : "M") + x(q[0]).toFixed(1) + " " + y(q[1]).toFixed(1); }).join(" "), fill: "none", stroke: color, "stroke-width": width, "vector-effect": "non-scaling-stroke"})); }
+    path(before, "var(--line)", 1.2);
+    path(after, vals[vals.length - 1] >= 0 ? "var(--good)" : "var(--bad)", 2);
+    var box = el("div", "chartrow"); box.append(g);
+    var lowV = Math.min.apply(null, after.map(function (q) { return q[1]; })), highV = Math.max.apply(null, after.map(function (q) { return q[1]; }));
+    var leg = el("div", "side", "Since the buy: low " + signed(lowV) + ", high " + signed(highV) + ". Grey dotted: your buy price. Blue: when you bought. " +
+                 (showTake ? "Green dashed: +" + TAKE + "% sell. " : "") + (showStop ? "Red dashed: −" + STOP + "% sell. " : "") +
+                 ((stopAt > t0 && stopAt <= t1) ? "Yellow: 24-hour time-stop check. " : "") + "(" + (ch.source || "price record") + ")");
+    box.append(leg); return box;
+  }
+  (C.open || []).forEach(function (c) {
+    var r = el("div", "coin"), a = el("div"); a.append(name(c), el("div", "age", c.opened ? "held " + held(c.opened) : ""));
+    var b = el("div"), pc = el("div", "pct " + tone(c.pnlPct), signed(c.pnlPct)); b.append(pc, el("div", "usd", usd(c.inUsd) + " in → " + (typeof c.nowUsd === "number" ? usd(c.nowUsd) + " now" : "no sell quote")));
+    var s = el("div", "side"); s.append(mini(c.history), el("div", null, typeof c.dayChangePct === "number" ? "coin " + signed(c.dayChangePct) + " in 24 h" : ""));
+    r.append(a, b, lane(c.pnlPct), s); CB.append(r);
+    var bc = big(c); if (bc) { bc.style.gridColumn = "1 / -1"; r.append(bc); }
+  });
+  if (!(C.open || []).length) CB.append(el("p", "empty", "No coins held right now. The next run with room will look for some."));
+  var AR = D.armed, AB = document.getElementById("armed");                  /* v46: coins the signer has armed and is watching for a dip */
+  if (AR) {
+    var need = typeof AR.triggerPct === "number" ? AR.triggerPct : 5, ah = el("div", "armhead", "Armed: " + AR.coins.length + (AR.coins.length === 1 ? " coin" : " coins") + " waiting for a " + need + "% dip");
+    AB.append(ah);
+    if (AR.pausedSeconds > 0) AB.append(el("p", "empty", "Watching is paused for " + span(AR.pausedSeconds) + ": " + (AR.pausedWhy || "the signer is busy") + "."));
+    AR.coins.forEach(function (c) {
+      var hm = function (utc) { var t = new Date(utc); return isNaN(t) ? null : t.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"}); };
+      var ready = c.readyUtc && hm(c.readyUtc), until = c.expiresUtc && hm(c.expiresUtc);
+      var where = typeof c.belowPct === "number" ? (c.belowPct >= 0 ? c.belowPct.toFixed(1) + "% under" : (-c.belowPct).toFixed(1) + "% over") + " its usual price (buys at " + need + "% under)"
+                : "learning its usual price" + (ready ? ": can buy from about " + ready : " (" + (AR.minHistoryMinutes || 15) + " min of watching first)");
+      var rr = row(AB, mintLink(c.mint, c.symbol || short(c.mint)), [where, el("div", "m", (until ? "armed until " + until : typeof c.minutesLeft === "number" ? "armed for " + c.minutesLeft + " more min" : "") + (c.tries ? " · " + c.tries + " blocked " + (c.tries === 1 ? "try" : "tries") : ""))]);
+      if (c.blocked) rr.append(el("div", "m", "last block: " + c.blocked));
+    });
+    if (!AR.coins.length) AB.append(el("p", "empty", "Nothing armed right now. The next run with room, in a market that is not falling, arms some."));
+  }
+  var cs = document.getElementById("coinsum");
+  function fig(k, v, cls) { var x = el("span", cls || ""); x.append(k + " ", el("b", null, v)); cs.append(x); }
+  fig("Open:", (C.open || []).length + " coin" + ((C.open || []).length === 1 ? "" : "s"));
+  fig("Open now:", signed(C.openPnlUsd, "$"), tone(C.openPnlUsd));
+  fig("Sold so far:", signed(C.closedPnlUsd, "$"), tone(C.closedPnlUsd));
+  var CL = document.getElementById("closed");
+  document.getElementById("closedsum").textContent = (C.closed || []).length ? (C.closed || []).length + " sold" : "nothing sold yet";
+  (C.closed || []).forEach(function (c) {
+    var r = el("div", "coin"), a = el("div"); a.append(name(c), el("div", "age", c.closed ? "held " + held(c.opened, c.closed) + " · sold " + clock(c.closed) : "sold"));
+    var b = el("div"); b.append(el("div", "pct " + tone(c.pnlPct), signed(c.pnlPct)), el("div", "usd", usd(c.inUsd) + " in → " + usd(c.outUsd) + " out"));
+    var s = el("div", "side", c.why ? "why: " + c.why : ""); s.style.gridColumn = "3 / -1";
+    r.append(a, b, s); CL.append(r);
+  });
+
+  /* ---------- cards ---------- */
+  var V = document.getElementById("verdicts");
+  if (!all.length) V.append(el("p", "empty", run.utc ? "The last run found no tokens to check." : "No run yet."));
+  all.forEach(function (l) {
+    var left = el("span"); left.append(l.symbol ? String(l.symbol).slice(0, 14) + " " : "", mintLink(l.mint));
+    var r = row(V, left, [tag(l.verdict ? (VWORD[l.verdict] || l.verdict) : "NOT CHECKED", VC[l.verdict] || "")]);
+    if (l.ticket) r.append(" ", tag(l.ticket + " " + (l.ticketStatus || ""), "flow"));
+    if (l.reasons && l.reasons.length) { var d = el("details"); d.append(el("summary", null, l.reasons.length + (l.reasons.length === 1 ? " reason" : " reasons"))); var ul = el("ul", "why"); l.reasons.forEach(function (x) { ul.append(el("li", null, x)); }); d.append(ul); r.append(d); }
+  });
+  var Hd = document.getElementById("holdings");
+  if (D.public) Hd.append(el("p", "empty", "Amounts and the wallet's address are left off the public page."));
+  else row(Hd, "SOL", [typeof w.sol === "number" ? w.sol.toFixed(6) + " SOL" : "not available", el("div", "m", typeof w.sol === "number" && w.solUsd ? usd(w.sol * w.solUsd) : (w.error || ""))]);
+  if (typeof w.rentSol === "number" && w.rentSol > 0) row(Hd, "Rent held", [w.rentSol.toFixed(6) + " SOL", el("div", "m", (w.solUsd ? usd(w.rentSol * w.solUsd) + " · " : "") + "deposits in token accounts, refunded when each coin is sold")]);
+  (w.tokens || []).forEach(function (t) { row(Hd, mintLink(t.mint, (D.symbols || {})[t.mint]), [String(t.ui || ""), el("div", "m", typeof t.sol === "number" ? "would sell for " + t.sol.toFixed(5) + " SOL (" + usd(t.usd) + ")" : "no sell quote")]); });
+  pos.forEach(function (p) { row(Hd, mintLink(p.mint), [tag("POSITION", "flow"), " cost " + usd(typeof p.usd === "number" ? p.usd : parseFloat(p.usd)), el("div", "m", D.public ? String(p.status || "") : "opened " + (p.opened ? clock(p.opened) : "unknown") + " · " + p.status)]); });
+  if (!(w.tokens || []).length && !pos.length) Hd.append(el("p", "empty", "No tokens held. The wallet is all SOL."));
+  if (w.address) { var wa = el("a", "m", "Wallet " + short(w.address) + " on Solscan"); wa.href = "https://solscan.io/account/" + w.address; var pw = el("p", "empty"); pw.append(wa); Hd.append(pw); }
+  var O = document.getElementById("orders"), any = false;
+  (D.trades || []).forEach(function (t) { any = true; var ok = t.status === "SENT"; row(O, (t.side || t.kind || "trade").toUpperCase(), [mintLink(t.mint), " ", String(t.size || ""), " ", tag(String(t.status || t.result || ""), ok ? "good" : "warn"), el("div", "m", t.utc ? clock(t.utc) : "")]); });
+  (D.tickets || []).forEach(function (t) { any = true; var s = String(t.status || ""); row(O, String(t.ticket || "ticket"), [String(t.side || ""), " ", mintLink(t.mint), " ", String(t.size || ""), " ", tag(s, s === "SENT" || s === "SETTLED" ? "good" : s === "REJECTED" || s === "FAILED" ? "bad" : "warn"), el("div", "m", [t.created_by ? "by " + t.created_by : "", t.created_utc ? clock(t.created_utc) : ""].filter(Boolean).join(" · "))]); });
+  if (!any) O.append(el("p", "empty", "No tickets or trades yet. Nothing has been bought."));
+  var VS = D.public ? null : D.visitors, VB = document.getElementById("visitorsbox"); VB.hidden = !VS;   /* v55: the public page's visitors, private page only */
+  if (VS) { var VR = document.getElementById("visitors"), HRS = VS.hours || 24;
+    row(VR, "Last " + HRS + " hours", [VS.visits + (VS.visits === 1 ? " visit" : " visits") + " from " + VS.visitors + (VS.visitors === 1 ? " visitor" : " visitors"), el("div", "m", "the public page; a visitor counts once an hour" + (VS.asOf ? " · read " + clock(VS.asOf) : ""))]);
+    if (!VS.rows) row(VR, "Last visit", [VS.last ? clock(VS.last.utc) + (VS.last.country ? " from " + VS.last.country : "") : "none in the last " + HRS + " hours", el("div", "m", "who each visitor was shows on the computer that holds the read key")]);
+    (VS.rows || []).forEach(function (v) {                                                    /* v56: each visit, with everything the log holds */
+      var where = [v.city, v.region, v.country].filter(Boolean).join(", ") || "place unknown";
+      var r = row(VR, clock(v.t), [where, el("div", "m", [v.browser, v.screen].filter(Boolean).join(" · ")), el("div", "m", [v.ip, v.isp].filter(Boolean).join(" · "))]);
+      var more = [["Network", v.net !== v.ip ? v.net : ""], ["Carrier", v.isp ? v.isp + (v.asn ? " (AS" + v.asn + ")" : "") : ""], ["Postcode", v.zip], ["Near", v.ll], ["Their time zone", v.ctz || v.tz], ["Language", v.lang], ["Came from", v.ref], ["Browser string", v.ua]].filter(function (x) { return x[1]; });
+      if (more.length) { var d = el("details"); d.append(el("summary", null, "More")); var ul = el("ul", "why"); more.forEach(function (x) { ul.append(el("li", null, x[0] + ": " + x[1])); }); d.append(ul); r.append(d); }
+    });
+    if (VS.rows && !VS.rows.length) VR.append(el("p", "empty", "Nobody has opened the public page in the last " + HRS + " hours.")); }
+  var R = document.getElementById("runs");
+  (D.runs || []).forEach(function (r) { var rr = row(R, r.utc ? clock(r.utc) : "run", [String(r.result || "")]); if (r.text) { var d = el("details"); d.append(el("summary", null, "Full note"), el("pre", null, r.text)); rr.append(d); } });
+  if (!(D.runs || []).length) R.append(el("p", "empty", "No agent runs recorded."));
+  if (D.live) document.getElementById("foot").textContent = "Live from your computer: the wallet is read from Solana and the desk from the mailbox every few seconds. The pipeline replays what the last agent run did, in order, and restarts when something changes.";
+  if (D.public) document.getElementById("foot").textContent = "Public view. Desk data is from the last hourly run; coin prices are followed from Jupiter's price list while the page is open, so the percentages between runs are estimates. The wallet's address, amounts and trade times are left off." + (D.ping ? " Visits to this page are logged, with the visitor's address and browser." : "");
+  if (window.DEADEYE) window.DEADEYE(D);
+  }
+  function shape(D) { var r = D.run || {}; return JSON.stringify([r.utc, !!r.inProgress, ((D.coins || {}).open || []).map(function (c) { return c.mint; }), (r.floor || []).map(function (l) { return l.mint; }), (r.leads || []).map(function (l) { return [l.mint, l.verdict, l.ticket, l.ticketStatus]; }), (D.signer || {}).state, D.halted, (D.positions || []).length, (D.tickets || []).length, (D.trades || []).length]); }
+  var first = JSON.parse(document.getElementById("data").textContent) || {}, last = shape(first);
+  boot(first, false);
+  var pushed = 0;                                                      /* v41: the monitor pushes each new view; polling is the fallback */
+  function take(D) { var now = shape(D); boot(D, now === last); last = now; }
+  if (first.public && window.fetch) {                                   /* v52: the public page follows prices itself; everything else waits for the next run */
+    if (first.ping && /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev\/hit$/.test(first.ping)) { try { fetch(first.ping + "?s=" + screen.width + "x" + screen.height + "&l=" + encodeURIComponent(String(navigator.language || "").slice(0, 12)) + "&z=" + encodeURIComponent(String((window.Intl && Intl.DateTimeFormat().resolvedOptions().timeZone) || "").slice(0, 32)) + "&r=" + encodeURIComponent(String(document.referrer || "").split("/")[2] || ""), {mode: "cors", cache: "no-store", keepalive: true}).catch(function () {}); } catch (x) {} }   /* v54: the owner's visit log; said so in the footer */
+    var base = JSON.stringify(first);
+    var follow = function () {
+      var D = JSON.parse(base), open = (D.coins || {}).open || [], arm = (D.armed || {}).coins || [], ids = [];
+      open.concat(arm).forEach(function (c) { if (c.px0 > 0 && ids.indexOf(c.mint) < 0) ids.push(c.mint); });
+      if (!ids.length) return;
+      fetch("https://lite-api.jup.ag/price/v3?ids=" + ids.join(","), {cache: "no-store"}).then(function (r) { return r.json(); }).then(function (P) {
+        var moved = 0, k = function (c) { var p = P[c.mint] && P[c.mint].usdPrice; return p > 0 && c.px0 > 0 ? p / c.px0 : null; };
+        open.forEach(function (c) { var x = k(c); if (x == null || typeof c.pnlPct !== "number") return; c.pnlPct = ((1 + c.pnlPct / 100) * x - 1) * 100;
+          if (typeof c.nowUsd === "number") { c.nowUsd *= x; if (typeof c.inUsd === "number") c.pnlUsd = c.nowUsd - c.inUsd; } moved++; });
+        arm.forEach(function (c) { var x = k(c); if (x == null || typeof c.belowPct !== "number") return; c.belowPct = (1 - (1 - c.belowPct / 100) * x) * 100; moved++; });
+        if (!moved) return;
+        D.coins.openPnlUsd = open.reduce(function (a, c) { return a + (typeof c.pnlUsd === "number" ? c.pnlUsd : 0); }, 0);
+        D.pricesLive = new Date().toISOString(); boot(D, true);
+      }).catch(function () {});
+    };
+    follow(); setInterval(follow, 20000);
+  }
+  if (first.live && window.EventSource) {
+    var es = new EventSource("events");
+    es.onmessage = function (e) { pushed = Date.now(); try { take(JSON.parse(e.data)); } catch (x) {} };
+  }
+  if (first.live) setInterval(function () {
+    if (Date.now() - pushed < 30000) return;                           /* pushes are arriving: nothing to ask for */
+    fetch("data.json", {cache: "no-store"}).then(function (r) { return r.json(); }).then(take)
+      .catch(function () { var s = document.getElementById("snap"); if (s && !/not answering/.test(s.textContent)) s.append(" · the local dashboard program is not answering"); });
+  }, 5000);
+})();
+</script>
+</body>
+</html>
